@@ -1,0 +1,113 @@
+---
+title: "Coursera Data Science - Practical Machine Learning"
+author: "Stefan Furrer"
+date: "May 24, 2015 "
+output: html_document
+---
+
+# Practical Machine Learning: Course Project
+========================================================
+
+## Synopsis: 
+
+Activity tracking devices, such as Jawbone Up, Nike FuelBand, and Fitbit, allow now the collection of a large amount of data about personal activity relatively inexpensively. Taking measurements about ones activities regularly, might allow finding behavioral patterns or improving health. While people regularly quantify particular activities they perform, they rarely quantify how well they do it. In this project, data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants were utilized to to predict the manner in which they did the exercise. Participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+###
+The goal of this project is to predict the manner of performing unilateral dumbbell biceps curls based on data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. The 5 possible methods include -
+* A: exactly according to the specification 
+* B: throwing the elbows to the front
+* C: lifting the dumbbell only halfway 
+* D: lowering the dumbbell only halfway
+* E: throwing the hips to the front
+###
+
+#### Set working directory, load packages and data
+The data for this project was accessed fro the project was accessed on May 20, 2015 and is part of the following source: http://groupware.les.inf.puc-rio.br/har. 
+- Training data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+- Test data: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r}
+setwd('/Users/furrer/Documents/Coursera/Practical Machine Learning/Project')
+
+library(caret)
+library(randomForest)
+library(e1071)
+
+training <- read.csv(file="pml-training.csv", header=TRUE, as.is = TRUE, stringsAsFactors = FALSE, sep=',', na.strings=c('NA','','#DIV/0!'))
+testing <- read.csv(file="pml-testing.csv", header=TRUE, as.is = TRUE, stringsAsFactors = FALSE, sep=',', na.strings=c('NA','','#DIV/0!'))
+````
+
+#### Data Exploration
+The training data contains 19'622 observations and 160 variables each, and the training set 20 observations. The different variables are listed below.
+
+```{r}
+sapply(training, class)
+sum(complete.cases(training))
+```
+
+#### Data Clean-up
+The data exploration identified many empty variables or NA values, as well as variables not related to accelerometer measurements, such as amplitude, gyroscope and others. Variables with NA's and near zero variables were discarded, resulting in a data set of 28 variables, compared to the initial 160.
+
+````{r}
+index_na <- apply(training,2,function(x) {sum(is.na(x))}) 
+training <- training[,which(index_na == 0)]
+index_na <- apply(testing,2,function(x) {sum(is.na(x))}) 
+testing <- testing[,which(index_na == 0)]
+training$classe <- as.factor(training$classe)  
+
+# Preprocessing of variables
+i <- which(lapply(training, class) %in% "numeric")
+
+preObj <-preProcess(training[,i],method=c('knnImpute', 'center', 'scale'))
+trainLess1 <- predict(preObj, training[,i])
+trainLess1$classe <- training$classe
+testLess1 <-predict(preObj,testing[,i])
+
+# Removing the near zero variables, as they are not as relevant to the predictions
+nearZeroVariables <- nearZeroVar(trainLess1,saveMetrics=TRUE)
+trainLess1 <- trainLess1[,nearZeroVariables$nzv==FALSE]
+
+nearZeroVariables <- nearZeroVar(testLess1,saveMetrics=TRUE)
+testLess1 <- testLess1[,nearZeroVariables$nzv==FALSE]
+````
+
+#### Prediction Model Development
+In order of preparing the prediction, a validation set was assigned, by splitting the  training set into two parts, a training and a validation set. A random forest model was developed, using the training set to train and 10 fold cross validation.
+
+````{r}
+set.seed(12345)
+
+# Crossvalidation set
+inTrain = createDataPartition(trainLess1$classe, p = 3/4, list=FALSE)
+training = trainLess1[inTrain,]
+crossValidation = trainLess1[-inTrain,]
+
+# Random forest
+fit <- train(classe ~., method="rf", data=training, trControl=trainControl(method='cv'), number=5, allowParallel=TRUE )
+
+fit
+```
+#### Random Forest model accuracy
+The accuracy of the Random Forest model was assessed for the training and validation set. Following the computation on the accuracy of trainig and cross validation set
+
+````{r}
+# Training set:
+trainingPred <- predict(fit, training)
+confusionMatrix(trainingPred, training$classe)
+
+# Cross validation set
+cvPred <- predict(fit, crossValidation)
+confusionMatrix(cvPred, crossValidation$classe)
+````
+
+#### RESULTS
+The accuracy of the model is 99.2%, resulting in an out of sample error of 0.8% (1 - accuracy), representing a good model to predict how well the exercise was performed. 
+```{r}
+mean(predict(fit, crossValidation) == crossValidation$classe) * 100
+```
+
+Random Forest prediction for the 20 test cases to be submitted to the programming assignment:
+````{r}
+testingPred <- predict(fit, testLess1)
+testingPred
+````
